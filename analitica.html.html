@@ -1,0 +1,248 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>Gestor de Publicaciones</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: Arial; background-color: #f0f2f5; margin: 0; padding: 0; }
+    header { background-color: #1877f2; color: white; padding: 15px; text-align: center; font-size: 24px; }
+    .resumen { text-align: center; padding: 15px; font-size: 18px; font-weight: bold; }
+    main { display: flex; justify-content: space-between; padding: 20px; }
+    .formulario, .filtros { background: white; padding: 20px; border-radius: 10px; width: 48%; box-shadow: 0 0 10px #ccc; }
+    label { display: block; margin-top: 10px; font-weight: bold; }
+    input, select { width: 100%; padding: 8px; margin-top: 5px; border-radius: 5px; border: 1px solid #ccc; }
+    button { margin-top: 15px; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+    .guardar { background-color: #1877f2; color: white; }
+    .exportar { background-color: #28a745; color: white; }
+    .importar { background-color: #ffc107; color: black; }
+    .excel { background-color: #17a2b8; color: white; }
+    table { width: 100%; margin-top: 20px; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; }
+    th, td { padding: 10px; border-bottom: 1px solid #ccc; text-align: left; }
+    th { background-color: #f0f2f5; }
+    .acciones span { display: inline-block; margin-right: 10px; cursor: pointer; padding: 5px 8px; border-radius: 4px; }
+    .editar { color: white; background-color: #007bff; }
+    .eliminar { color: white; background-color: #dc3545; }
+    canvas { background-color: white; border-radius: 10px; margin-top: 20px; padding: 20px; }
+  </style>
+</head>
+<body>
+  <header>Gestor de Publicaciones</header>
+
+  <div class="resumen">
+    Total publicaciones: <span id="contadorPublicaciones">0</span> |
+    Total visualizaciones: <span id="totalVisualizaciones">0</span>
+  </div>
+
+  <main>
+    <div class="formulario">
+      <label>Nombre del Video</label>
+      <input type="text" id="nombre">
+      <label>Fecha</label>
+      <input type="date" id="fecha">
+      <label>Tipo</label>
+      <select id="tipo">
+        <option>Videos</option>
+        <option>Reels</option>
+        <option>Videos en vivo</option>
+        <option>Historias</option>
+        <option>Fotos</option>
+        <option>Textos</option>
+        <option>Enlaces</option>
+      </select>
+      <label>Visualizaciones</label>
+      <input type="number" id="visualizaciones">
+      <button class="guardar" onclick="guardar()">Guardar</button>
+    </div>
+
+    <div class="filtros">
+      <label>Filtrar por tipo</label>
+      <select id="filtroTipo" onchange="mostrar()">
+        <option value="">Todos</option>
+        <option>Videos</option><option>Reels</option><option>Videos en vivo</option>
+        <option>Historias</option><option>Fotos</option><option>Textos</option><option>Enlaces</option>
+      </select>
+
+      <label>Orden</label>
+      <select id="filtroOrden" onchange="mostrar()">
+        <option value="mas">Más visualizaciones</option>
+        <option value="menos">Menos visualizaciones</option>
+        <option value="recientes">Más recientes</option>
+      </select>
+
+      <label>Filtrar por rango de días</label>
+      <select id="filtroFecha" onchange="mostrar()">
+        <option value="">Todas</option>
+        <option value="1">Hoy</option>
+        <option value="7">Últimos 7 días</option>
+        <option value="30">Últimos 30 días</option>
+        <option value="90">Últimos 90 días</option>
+      </select>
+
+      <label>Filtrar entre fechas exactas</label>
+      <input type="date" id="fechaInicio" onchange="mostrar()">
+      <input type="date" id="fechaFin" onchange="mostrar()">
+
+      <br><br>
+      <button class="exportar" onclick="exportarJSON()">Exportar JSON</button>
+      <button class="importar" onclick="document.getElementById('archivoJson').click()">Importar JSON</button>
+      <input type="file" id="archivoJson" accept=".json" style="display:none" onchange="importarJSON(event)">
+      <button class="excel" onclick="exportarCSV()">Descargar Excel (.csv)</button>
+    </div>
+  </main>
+
+  <section>
+    <table>
+      <thead>
+        <tr><th>Nombre</th><th>Fecha</th><th>Tipo</th><th>Visualizaciones</th><th>Acciones</th></tr>
+      </thead>
+      <tbody id="tablaRegistros"></tbody>
+    </table>
+    <canvas id="grafico" height="120"></canvas>
+  </section>
+
+  <script>
+    let chart;
+
+    const guardar = () => {
+      const nombre = document.getElementById('nombre').value.trim();
+      const fecha = document.getElementById('fecha').value;
+      const tipo = document.getElementById('tipo').value;
+      const visualizaciones = parseInt(document.getElementById('visualizaciones').value);
+      if (!nombre || !fecha || isNaN(visualizaciones)) return alert("Todos los campos son obligatorios");
+
+      let registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      registros.push({ nombre, fecha, tipo, visualizaciones });
+      localStorage.setItem('publicaciones', JSON.stringify(registros));
+      mostrar();
+    };
+
+    const eliminar = (nombre, tipo, fecha) => {
+      let registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      registros = registros.filter(r => !(r.nombre === nombre && r.tipo === tipo && r.fecha === fecha));
+      localStorage.setItem('publicaciones', JSON.stringify(registros));
+      mostrar();
+    };
+
+    const editar = (nombre, tipo, fecha) => {
+      let registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      const index = registros.findIndex(r => r.nombre === nombre && r.tipo === tipo && r.fecha === fecha);
+      if (index === -1) return;
+
+      const nuevoValor = prompt("¿Cuántas visualizaciones deseas agregar?", "0");
+      if (nuevoValor !== null) {
+        const incremento = parseInt(nuevoValor);
+        if (!isNaN(incremento)) {
+          registros[index].visualizaciones += incremento;
+          localStorage.setItem('publicaciones', JSON.stringify(registros));
+          mostrar();
+        } else {
+          alert("Debes ingresar un número válido.");
+        }
+      }
+    };
+
+    const exportarJSON = () => {
+      const datos = localStorage.getItem("publicaciones");
+      const blob = new Blob([datos], { type: "application/json" });
+      const enlace = document.createElement("a");
+      enlace.href = URL.createObjectURL(blob);
+      enlace.download = "publicaciones.json";
+      enlace.click();
+    };
+
+    const importarJSON = (event) => {
+      const archivo = event.target.files[0];
+      if (!archivo) return;
+      const lector = new FileReader();
+      lector.onload = e => {
+        try {
+          const datos = JSON.parse(e.target.result);
+          if (!Array.isArray(datos)) throw new Error("Archivo inválido");
+          localStorage.setItem('publicaciones', JSON.stringify(datos));
+          mostrar();
+        } catch (err) {
+          alert("Error: " + err.message);
+        }
+      };
+      lector.readAsText(archivo);
+    };
+
+    const exportarCSV = () => {
+      const registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      if (registros.length === 0) return alert("No hay datos para exportar");
+      let csv = 'Nombre,Fecha,Tipo,Visualizaciones\n';
+      registros.forEach(r => {
+        csv += `${r.nombre},${r.fecha},${r.tipo},${r.visualizaciones}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const enlace = document.createElement("a");
+      enlace.href = URL.createObjectURL(blob);
+      enlace.download = "publicaciones.csv";
+      enlace.click();
+    };
+
+    const mostrar = () => {
+      const registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      const tbody = document.getElementById('tablaRegistros');
+      tbody.innerHTML = "";
+      let total = 0;
+      let filtrados = [...registros];
+
+      const tipo = document.getElementById('filtroTipo').value;
+      const orden = document.getElementById('filtroOrden').value;
+      const fechaFiltro = document.getElementById('filtroFecha').value;
+      const fechaInicio = document.getElementById('fechaInicio').value;
+      const fechaFin = document.getElementById('fechaFin').value;
+
+      if (tipo) filtrados = filtrados.filter(r => r.tipo === tipo);
+      if (fechaFiltro) {
+        const limite = new Date();
+        limite.setDate(limite.getDate() - parseInt(fechaFiltro));
+        filtrados = filtrados.filter(r => new Date(r.fecha) >= limite);
+      }
+      if (fechaInicio && fechaFin) {
+        const desde = new Date(fechaInicio);
+        const hasta = new Date(fechaFin);
+        filtrados = filtrados.filter(r => {
+          const f = new Date(r.fecha);
+          return f >= desde && f <= hasta;
+        });
+      }
+
+      if (orden === "mas") filtrados.sort((a,b)=>b.visualizaciones - a.visualizaciones);
+      else if (orden === "menos") filtrados.sort((a,b)=>a.visualizaciones - b.visualizaciones);
+      else if (orden === "recientes") filtrados.sort((a,b)=>new Date(b.fecha) - new Date(a.fecha));
+
+      filtrados.forEach((r) => {
+        const [y,m,d] = r.fecha.split("-");
+        const fecha = new Date(y, m-1, d).toLocaleDateString('es-ES');
+        tbody.innerHTML += `<tr><td>${r.nombre}</td><td>${fecha}</td><td>${r.tipo}</td><td>${r.visualizaciones}</td><td class='acciones'><span class='editar' onclick='editar("${r.nombre}", "${r.tipo}", "${r.fecha}")'>➕ Agregar</span><span class='eliminar' onclick='eliminar("${r.nombre}", "${r.tipo}", "${r.fecha}")'>❌ Eliminar</span></td></tr>`;
+        total += r.visualizaciones;
+      });
+
+      document.getElementById('contadorPublicaciones').innerText = filtrados.length;
+      document.getElementById('totalVisualizaciones').innerText = total;
+
+      const conteo = {};
+      registros.forEach(r => conteo[r.tipo] = (conteo[r.tipo] || 0) + 1);
+      const ctx = document.getElementById('grafico').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(conteo),
+          datasets: [{
+            label: 'Cantidad de Publicaciones',
+            data: Object.values(conteo),
+            backgroundColor: '#1877f2'
+          }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true } } }
+      });
+    };
+
+    window.onload = mostrar;
+  </script>
+</body>
+</html>
