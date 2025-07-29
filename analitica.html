@@ -1,11 +1,9 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <title>Gestor de Publicaciones</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.0.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/12.0.0/firebase-firestore-compat.js"></script>
   <style>
     body { font-family: Arial; background-color: #f0f2f5; margin: 0; padding: 0; }
     header { background-color: #1877f2; color: white; padding: 15px; text-align: center; font-size: 24px; }
@@ -84,6 +82,12 @@
       <label>Filtrar entre fechas exactas</label>
       <input type="date" id="fechaInicio" onchange="mostrar()">
       <input type="date" id="fechaFin" onchange="mostrar()">
+
+      <br><br>
+      <button class="exportar" onclick="exportarJSON()">Exportar JSON</button>
+      <button class="importar" onclick="document.getElementById('archivoJson').click()">Importar JSON</button>
+      <input type="file" id="archivoJson" accept=".json" style="display:none" onchange="importarJSON(event)">
+      <button class="excel" onclick="exportarCSV()">Descargar Excel (.csv)</button>
     </div>
   </main>
 
@@ -98,65 +102,88 @@
   </section>
 
   <script>
-    const firebaseConfig = {
-      apiKey: "AIzaSyB-H7-AagRo34Yds8SwuWTbmsLmlwVILVU",
-      authDomain: "analitica-la-puerta.firebaseapp.com",
-      projectId: "analitica-la-puerta",
-      storageBucket: "analitica-la-puerta.appspot.com",
-      messagingSenderId: "735893561530",
-      appId: "1:735893561530:web:9de004b757a22dcf09a283"
-    };
-    firebase.initializeApp(firebaseConfig);
-    const db = firebase.firestore();
-
     let chart;
 
-    async function guardar() {
+    const guardar = () => {
       const nombre = document.getElementById('nombre').value.trim();
       const fecha = document.getElementById('fecha').value;
       const tipo = document.getElementById('tipo').value;
       const visualizaciones = parseInt(document.getElementById('visualizaciones').value);
       if (!nombre || !fecha || isNaN(visualizaciones)) return alert("Todos los campos son obligatorios");
 
-      const query = await db.collection("publicaciones").where("nombre", "==", nombre).where("tipo", "==", tipo).get();
-      if (!query.empty) {
-        const doc = query.docs[0];
-        await db.collection("publicaciones").doc(doc.id).update({
-          visualizaciones: doc.data().visualizaciones + visualizaciones,
-          fecha: fecha
-        });
-      } else {
-        await db.collection("publicaciones").add({ nombre, fecha, tipo, visualizaciones });
-      }
+      let registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      registros.push({ nombre, fecha, tipo, visualizaciones });
+      localStorage.setItem('publicaciones', JSON.stringify(registros));
       mostrar();
-    }
+    };
 
-    async function eliminar(nombre, tipo, fecha) {
-      const query = await db.collection("publicaciones").where("nombre", "==", nombre).where("tipo", "==", tipo).where("fecha", "==", fecha).get();
-      query.forEach(doc => db.collection("publicaciones").doc(doc.id).delete());
+    const eliminar = (nombre, tipo, fecha) => {
+      let registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      registros = registros.filter(r => !(r.nombre === nombre && r.tipo === tipo && r.fecha === fecha));
+      localStorage.setItem('publicaciones', JSON.stringify(registros));
       mostrar();
-    }
+    };
 
-    async function editar(nombre, tipo, fecha) {
-      const query = await db.collection("publicaciones").where("nombre", "==", nombre).where("tipo", "==", tipo).where("fecha", "==", fecha).get();
-      if (!query.empty) {
-        const doc = query.docs[0];
-        const nuevoValor = prompt("¿Cuántas visualizaciones deseas agregar?", "0");
-        if (nuevoValor !== null) {
-          const incremento = parseInt(nuevoValor);
-          if (!isNaN(incremento)) {
-            await db.collection("publicaciones").doc(doc.id).update({
-              visualizaciones: doc.data().visualizaciones + incremento
-            });
-            mostrar();
-          }
+    const editar = (nombre, tipo, fecha) => {
+      let registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      const index = registros.findIndex(r => r.nombre === nombre && r.tipo === tipo && r.fecha === fecha);
+      if (index === -1) return;
+
+      const nuevoValor = prompt("¿Cuántas visualizaciones deseas agregar?", "0");
+      if (nuevoValor !== null) {
+        const incremento = parseInt(nuevoValor);
+        if (!isNaN(incremento)) {
+          registros[index].visualizaciones += incremento;
+          localStorage.setItem('publicaciones', JSON.stringify(registros));
+          mostrar();
+        } else {
+          alert("Debes ingresar un número válido.");
         }
       }
-    }
+    };
 
-    async function mostrar() {
-      const snapshot = await db.collection("publicaciones").get();
-      const registros = snapshot.docs.map(doc => doc.data());
+    const exportarJSON = () => {
+      const datos = localStorage.getItem("publicaciones");
+      const blob = new Blob([datos], { type: "application/json" });
+      const enlace = document.createElement("a");
+      enlace.href = URL.createObjectURL(blob);
+      enlace.download = "publicaciones.json";
+      enlace.click();
+    };
+
+    const importarJSON = (event) => {
+      const archivo = event.target.files[0];
+      if (!archivo) return;
+      const lector = new FileReader();
+      lector.onload = e => {
+        try {
+          const datos = JSON.parse(e.target.result);
+          if (!Array.isArray(datos)) throw new Error("Archivo inválido");
+          localStorage.setItem('publicaciones', JSON.stringify(datos));
+          mostrar();
+        } catch (err) {
+          alert("Error: " + err.message);
+        }
+      };
+      lector.readAsText(archivo);
+    };
+
+    const exportarCSV = () => {
+      const registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
+      if (registros.length === 0) return alert("No hay datos para exportar");
+      let csv = 'Nombre,Fecha,Tipo,Visualizaciones\n';
+      registros.forEach(r => {
+        csv += `${r.nombre},${r.fecha},${r.tipo},${r.visualizaciones}\n`;
+      });
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const enlace = document.createElement("a");
+      enlace.href = URL.createObjectURL(blob);
+      enlace.download = "publicaciones.csv";
+      enlace.click();
+    };
+
+    const mostrar = () => {
+      const registros = JSON.parse(localStorage.getItem('publicaciones') || '[]');
       const tbody = document.getElementById('tablaRegistros');
       tbody.innerHTML = "";
       let total = 0;
@@ -188,7 +215,8 @@
       else if (orden === "recientes") filtrados.sort((a,b)=>new Date(b.fecha) - new Date(a.fecha));
 
       filtrados.forEach((r) => {
-        const fecha = new Date(r.fecha).toLocaleDateString('es-ES');
+        const [y,m,d] = r.fecha.split("-");
+        const fecha = new Date(y, m-1, d).toLocaleDateString('es-ES');
         tbody.innerHTML += `<tr><td>${r.nombre}</td><td>${fecha}</td><td>${r.tipo}</td><td>${r.visualizaciones}</td><td class='acciones'><span class='editar' onclick='editar("${r.nombre}", "${r.tipo}", "${r.fecha}")'>➕ Agregar</span><span class='eliminar' onclick='eliminar("${r.nombre}", "${r.tipo}", "${r.fecha}")'>❌ Eliminar</span></td></tr>`;
         total += r.visualizaciones;
       });
@@ -212,7 +240,7 @@
         },
         options: { responsive: true, scales: { y: { beginAtZero: true } } }
       });
-    }
+    };
 
     window.onload = mostrar;
   </script>
